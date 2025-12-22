@@ -1,0 +1,13 @@
+dist
+coverage
+node_modules
+npm-debug.log
+.DS_Store
+src/.DS_Store
+.vscode
+jest-report/
+package-lock.json
+src/server/private.key
+ca/cert.pem
+ca/cert.key
+.env
