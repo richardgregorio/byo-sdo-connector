@@ -25,7 +25,7 @@ module.exports = {
         static: {
             directory: __dirname + '/public'
         },
-        host: '127.0.0.1',
+        host: '0.0.0.0',
         port: 3031,
         proxy: {
             '/api': process.env.SERVER_URL,
