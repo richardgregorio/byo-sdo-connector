@@ -3,14 +3,12 @@ import jwt from 'jsonwebtoken';
 import axios from 'axios';
 import { settingsCache } from '../ottAppServer.mjs';
 import { getTimeStampForLoglines } from '../util.mjs';
-
+import fs from 'fs'; // Add this 
 // Import dotenv that loads the config metadata from .env
 //require('dotenv').config();
 
 // Get config metadata from .env
 const {
-  SF_CONSUMER_KEY,
-  SF_PRIVATE_KEY,
   SF_AUDIENCE,
   SF_SUBJECT, // OTT-needed
   SF_AUTH_ENDPOINT
@@ -43,14 +41,25 @@ export async function getAccessToken(refresh) {
   if (refresh || !cachedAccessToken) {
     // TODO: The console logs will be refactored in next story W-13133225
     console.log(getTimeStampForLoglines() + `Obtain a new access token.`);
+  
+    // Also sanitize the Consumer Key (Removes accidental quotes)
+    const consumerKey = (process.env.SF_CONSUMER_KEY || '').replace(/['"]+/g, '');
+   
     // Obtain a new access token.
-    const consumerKey = SF_CONSUMER_KEY;
-    const privateKey = SF_PRIVATE_KEY.replace(/\\n/g, '\n');
+    let privateKey = process.env.SF_PRIVATE_KEY;
+
+    // Add this logic: If the key looks like a path or is missing content, read the file
+    if (fs.existsSync('/app/ca/cert.key')) {
+        privateKey = fs.readFileSync('/app/ca/cert.key', 'utf8');
+    } else if (privateKey) {
+        privateKey = privateKey.replace(/\\n/g, '\n');
+    }
     // If there's no private key provided in .env for messaging, we should still allow the app run and enable phone usage
     // Return null here to avoid secretOrPrivateKey error
     if (!privateKey || privateKey.length < 50) {
-      
-      return null;}
+      return null;
+    }    
+ 
     const aud = SF_AUDIENCE;
     let sub = IS_LOCAL_CONFIG ? SF_SUBJECT : settingsCache.get("userName"); // read from .env if it's ott
 
@@ -75,4 +84,3 @@ export async function getAccessToken(refresh) {
   console.log(getTimeStampForLoglines() + `cachedAccessToken: ${cachedAccessToken}.`);
   return cachedAccessToken;
 }
-
