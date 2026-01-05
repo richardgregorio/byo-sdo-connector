@@ -8,6 +8,7 @@ src/.DS_Store
 jest-report/
 package-lock.json
 src/server/private.key
+src/server/cert.pem
 ca/cert.pem
 ca/cert.key
 .env
