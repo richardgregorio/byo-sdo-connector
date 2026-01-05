@@ -30,6 +30,9 @@ const jsonParser = bodyParser.json();
 import { getTimeStampForLoglines } from './util.mjs';
 import { v4 as uuidv4} from 'uuid';
 
+import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
+
+
 customEnv.env();
 
 // Get config metadata from .env
@@ -47,6 +50,12 @@ const {
   SF_AUTHORIZATION_CONTEXT_TYPE,
   QUEUE_ID
 } = process.env;
+
+const SNS_TOPIC_ARN = process.env.TOPIC_ARN;
+const snsClient = new SNSClient({
+  region: process.env.AWS_REGION || "us-east-1"
+});
+
 
 const IS_LOCAL_CONFIG = process.env.IS_LOCAL_CONFIG === "true";
 console.log(getTimeStampForLoglines() + "Using local config : " + IS_LOCAL_CONFIG);
@@ -68,6 +77,32 @@ settingsCache.set("authorizationContextType", SF_AUTHORIZATION_CONTEXT_TYPE);
 settingsCache.set("queueId", QUEUE_ID);
 
 
+/**
+ * Logic-specific function to handle the SNS publication
+ */
+async function publishToSns(messageObj) {
+  if (!SNS_TOPIC_ARN) {
+    console.warn(getTimeStampForLoglines() + "SNS_TOPIC_ARN not configured. Skipping SNS publish.");
+    return;
+  }
+
+  console.log(getTimeStampForLoglines() + "Publishing message to SNS...");
+  console.log(getTimeStampForLoglines() + "SNS payload:", messageObj);
+
+  const command = new PublishCommand({
+    TopicArn: SNS_TOPIC_ARN,
+    Message: JSON.stringify(messageObj),
+    Subject: "salesforce-agent-message"
+  });
+
+  const response = await snsClient.send(command);
+
+  console.log(
+    getTimeStampForLoglines() +
+    "SNS publish SUCCESS. MessageId: " +
+    response.MessageId
+  );
+}
 // function to dynamically fetch conversation channel definition values and set in the settingsCache
 async function fetchAndCacheCCDValues() {
   try {
@@ -967,7 +1002,7 @@ function getFieldValue(payload, fieldName) {
   }
 }
 
-function handleStaticContentMessage(eventType, messageType, channelAddressIdFieldVal, recipientUserName, payloadField, payloadFieldObj) {
+async function handleStaticContentMessage(eventType, messageType, channelAddressIdFieldVal, recipientUserName, payloadField, payloadFieldObj) {
   let replyMessageText = getFieldValue(payloadFieldObj, 'text');
   console.log(getTimeStampForLoglines() + 'replyMessageText: ', replyMessageText);
   
@@ -995,17 +1030,39 @@ function handleStaticContentMessage(eventType, messageType, channelAddressIdFiel
   }
 
   if (formatType === 'Text' && replyMessageText) {
-    if (global.io){
-      global.io.emit('agentMessage', {
+    const snsPayload = {
+      source: "salesforce",
+      type: "agentMessage",
+      timestamp: new Date().toISOString(),
+      channelAddressId: channelAddressIdFieldVal,
+      recipient: recipientUserName,
+      message: {
         text: replyMessageText,
-        sender: 'agent',
-       // conversationId: conversationIdentifier,
-        channelAddressId: channelAddressIdFieldVal
-      });
-      console.log(' +++++++++++++++++++ Emmited agentMessage to frontend: ', replyMessageText);
-    } else {
-      console.warn(' +++++++++++++++++++  Socket.IO not installed');
+        formatType,
+        attachments: {
+          attachmentName,
+          attachmentUrl,
+          previewImageUrl,
+          url,
+          title
+        }
       }
+    };
+
+    console.log(
+      getTimeStampForLoglines() +
+      "Intercepted agent message. Redirecting to SNS instead of frontend."
+    );
+
+    try {
+      await publishToSns(snsPayload);
+    } catch (err) {
+      console.error(
+        getTimeStampForLoglines() +
+        "FAILED to publish message to SNS:",
+        err
+      );
+    }
   }
 
   return JSON.stringify({
